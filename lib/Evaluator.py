@@ -5,7 +5,7 @@
 # Developed by: Rafael Padilla (rafael.padilla@smt.ufrj.br)                               #
 #        SMT - Signal Multimedia and Telecommunications Lab                               #
 #        COPPE - Universidade Federal do Rio de Janeiro                                   #
-#        Last modification: Oct 9th 2018                                                 #
+#        Last modification: Oct 9th 2018                                                  #
 ###########################################################################################
 
 import os
@@ -63,14 +63,14 @@ class Evaluator:
                 groundTruths.append([
                     bb.getImageName(),
                     bb.getClassId(), 1,
-                    bb.getAbsoluteBoundingBox(BBFormat.XYX2Y2)
+                    bb.getAbsoluteBoundingBox(BBFormat.XYZX2Y2Z2) # !!!!!!!!!!!!!!!!
                 ])
             else:
                 detections.append([
                     bb.getImageName(),
                     bb.getClassId(),
                     bb.getConfidence(),
-                    bb.getAbsoluteBoundingBox(BBFormat.XYX2Y2)
+                    bb.getAbsoluteBoundingBox(BBFormat.XYZX2Y2Z2) # !!!!!!!!!!!!!!!!
                 ])
             # get class
             if bb.getClassId() not in classes:
@@ -97,8 +97,9 @@ class Evaluator:
             # create dictionary with amount of gts for each image
             det = {key: np.zeros(len(gts[key])) for key in gts}
 
-            # print("Evaluating class: %s (%d detections)" % (str(c), len(dects)))
+            print("Evaluating class: %s (%d detections)" % (str(c), len(dects)))
             # Loop through detections
+            iou_col = []
             for d in range(len(dects)):
                 # print('dect %s => %s' % (dects[d][0], dects[d][3],))
                 # Find ground truth image
@@ -108,6 +109,7 @@ class Evaluator:
                     # print('Ground truth gt => %s' % (gt[j][3],))
                     iou = Evaluator.iou(dects[d][3], gt[j][3])
                     if iou > iouMax:
+                        iou_col.append(iou)
                         iouMax = iou
                         jmax = j
                 # Assign detection as true positive/don't care/false positive
@@ -115,14 +117,14 @@ class Evaluator:
                     if det[dects[d][0]][jmax] == 0:
                         TP[d] = 1  # count as true positive
                         det[dects[d][0]][jmax] = 1  # flag as already 'seen'
-                        # print("TP")
                     else:
                         FP[d] = 1  # count as false positive
-                        # print("FP")
+                        # print(f"FP and the iou is {iou}")
                 # - A detected "cat" is overlaped with a GT "cat" with IOU >= IOUThreshold.
                 else:
+                    # print(f' iouMax -- {iouMax}, the IOUThreshold is {IOUThreshold}')
                     FP[d] = 1  # count as false positive
-                    # print("FP")
+                    # print(f"FP and the iou is {iou}")
             # compute precision, recall and average precision
             acc_FP = np.cumsum(FP)
             acc_TP = np.cumsum(TP)
@@ -143,7 +145,8 @@ class Evaluator:
                 'interpolated recall': mrec,
                 'total positives': npos,
                 'total TP': np.sum(TP),
-                'total FP': np.sum(FP)
+                'total FP': np.sum(FP),
+                'iou_col' : iou_col,
             }
             ret.append(r)
         return ret
@@ -367,10 +370,10 @@ class Evaluator:
     @staticmethod
     def _getAllIOUs(reference, detections):
         ret = []
-        bbReference = reference.getAbsoluteBoundingBox(BBFormat.XYX2Y2)
+        bbReference = reference.getAbsoluteBoundingBox(BBFormat.XYZX2Y2Z2)
         # img = np.zeros((200,200,3), np.uint8)
         for d in detections:
-            bb = d.getAbsoluteBoundingBox(BBFormat.XYX2Y2)
+            bb = d.getAbsoluteBoundingBox(BBFormat.XYZX2Y2Z2)
             iou = Evaluator.iou(bbReference, bb)
             # Show blank image with the bounding boxes
             # img = add_bb_into_image(img, d, color=(255,0,0), thickness=2, label=None)
@@ -390,6 +393,10 @@ class Evaluator:
         union = Evaluator._getUnionAreas(boxA, boxB, interArea=interArea)
         # intersection over union
         iou = interArea / union
+        if iou < 0:
+            iou = - iou
+            print('the iou < 0, and i do the iou = - iou')
+        # print(f'the iou is {iou}, the interArea is {interArea}, the union is {union}')
         assert iou >= 0
         return iou
 
@@ -397,13 +404,17 @@ class Evaluator:
     # boxB = (Bx1,By1,Bx2,By2)
     @staticmethod
     def _boxesIntersect(boxA, boxB):
-        if boxA[0] > boxB[2]:
+        if boxA[0] > boxB[3]:
             return False  # boxA is right of boxB
-        if boxB[0] > boxA[2]:
+        if boxB[0] > boxA[3]:
             return False  # boxA is left of boxB
-        if boxA[3] < boxB[1]:
+        if boxA[2] > boxB[5]:
+            return False  # boxA is left of boxB
+        if boxB[2] > boxA[5]:
+            return False  # boxA is left of boxB
+        if boxA[4] < boxB[1]:
             return False  # boxA is above boxB
-        if boxA[1] > boxB[3]:
+        if boxA[1] > boxB[4]:
             return False  # boxA is below boxB
         return True
 
@@ -411,19 +422,26 @@ class Evaluator:
     def _getIntersectionArea(boxA, boxB):
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
-        xB = min(boxA[2], boxB[2])
-        yB = min(boxA[3], boxB[3])
+        zA = max(boxA[2], boxB[2])
+        xB = min(boxA[3], boxB[3])
+        yB = min(boxA[4], boxB[4])
+        zB = min(boxA[5], boxB[5])
         # intersection area
-        return (xB - xA + 1) * (yB - yA + 1)
+        return (xB - xA + 1) * (yB - yA + 1) * (zB - zA + 1)
 
     @staticmethod
     def _getUnionAreas(boxA, boxB, interArea=None):
+        # print(f'the boxa is {boxA}, the boxb is {boxB}')
         area_A = Evaluator._getArea(boxA)
         area_B = Evaluator._getArea(boxB)
+        # print(f'the areaa is {area_A}, the areab is {area_B}')
         if interArea is None:
             interArea = Evaluator._getIntersectionArea(boxA, boxB)
+            # print(f'the interarea is None, the interarea is {interArea}')
+        # print(f'the interarea is None, the interarea is {interArea}')
+        # print(f'the iou is {area_A + area_B - interArea}')
         return float(area_A + area_B - interArea)
 
     @staticmethod
     def _getArea(box):
-        return (box[2] - box[0] + 1) * (box[3] - box[1] + 1)
+        return (box[3] - box[0] + 1) * (box[4] - box[1] + 1) * (box[5] - box[2] + 1)

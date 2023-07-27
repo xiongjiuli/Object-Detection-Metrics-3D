@@ -17,14 +17,15 @@ from Evaluator import *
 from utils import *
 
 
-def getBoundingBoxes():
+def getBoundingBoxes(confi):
     """Read txt files containing bounding boxes (ground truth and detections)."""
     allBoundingBoxes = BoundingBoxes()
     import glob
     import os
     # Read ground truths
     currentPath = os.path.dirname(os.path.abspath(__file__))
-    folderGT = os.path.join(currentPath, 'groundtruths')
+    print(f'currentPath is {currentPath}')
+    folderGT = os.path.join(currentPath, 'train_groundtruths')
     os.chdir(folderGT)
     files = glob.glob("*.txt")
     files.sort()
@@ -46,24 +47,29 @@ def getBoundingBoxes():
                 continue
             splitLine = line.split(" ")
             idClass = splitLine[0]  # class
-            x = float(splitLine[1])  # confidence
+            x = float(splitLine[1])
             y = float(splitLine[2])
-            w = float(splitLine[3])
-            h = float(splitLine[4])
+            z = float(splitLine[3])
+            w = float(splitLine[4])
+            h = float(splitLine[5])
+            d = float(splitLine[6])
+            iMagshape = splitLine[7]
             bb = BoundingBox(
                 nameOfImage,
                 idClass,
                 x,
                 y,
+                z,
                 w,
                 h,
-                CoordinatesType.Absolute, (200, 200),
+                d,
+                CoordinatesType.Absolute, iMagshape,
                 BBType.GroundTruth,
-                format=BBFormat.XYWH)
+                format=BBFormat.XYZX2Y2Z2)
             allBoundingBoxes.addBoundingBox(bb)
         fh1.close()
     # Read detections
-    folderDet = os.path.join(currentPath, 'detections')
+    folderDet = os.path.join(currentPath, 'train_detections')
     os.chdir(folderDet)
     files = glob.glob("*.txt")
     files.sort()
@@ -86,22 +92,30 @@ def getBoundingBoxes():
             splitLine = line.split(" ")
             idClass = splitLine[0]  # class
             confidence = float(splitLine[1])  # confidence
-            x = float(splitLine[2])
-            y = float(splitLine[3])
-            w = float(splitLine[4])
-            h = float(splitLine[5])
-            bb = BoundingBox(
-                nameOfImage,
-                idClass,
-                x,
-                y,
-                w,
-                h,
-                CoordinatesType.Absolute, (200, 200),
-                BBType.Detected,
-                confidence,
-                format=BBFormat.XYWH)
-            allBoundingBoxes.addBoundingBox(bb)
+            if confidence < confi:
+                continue
+            else:
+                x = float(splitLine[2])
+                y = float(splitLine[3])
+                z = float(splitLine[4])
+                w = float(splitLine[5])
+                h = float(splitLine[6])
+                d = float(splitLine[7])
+                iMagshape = splitLine[8]
+                bb = BoundingBox(
+                    nameOfImage,
+                    idClass,
+                    x,
+                    y,
+                    z,
+                    w,
+                    h,
+                    d,
+                    CoordinatesType.Absolute, iMagshape,
+                    BBType.Detected,
+                    confidence,
+                    format=BBFormat.XYZX2Y2Z2)
+                allBoundingBoxes.addBoundingBox(bb)
         fh1.close()
     return allBoundingBoxes
 
@@ -126,7 +140,7 @@ def createImages(dictGroundTruth, dictDetected):
 
 
 # Read txt files containing bounding boxes (ground truth and detections)
-boundingboxes = getBoundingBoxes()
+boundingboxes = getBoundingBoxes(confi=0.3)
 # Uncomment the line below to generate images based on the bounding boxes
 # createImages(dictGroundTruth, dictDetected)
 # Create an evaluator object in order to obtain the metrics
@@ -137,14 +151,14 @@ evaluator = Evaluator()
 # Plot Precision x Recall curve
 evaluator.PlotPrecisionRecallCurve(
     boundingboxes,  # Object containing all bounding boxes (ground truths and detections)
-    IOUThreshold=0.3,  # IOU threshold
+    IOUThreshold=0.01,  # IOU threshold
     method=MethodAveragePrecision.EveryPointInterpolation,  # As the official matlab code
     showAP=True,  # Show Average Precision in the title of the plot
     showInterpolatedPrecision=True)  # Plot the interpolated precision curve
 # Get metrics with PASCAL VOC metrics
 metricsPerClass = evaluator.GetPascalVOCMetrics(
     boundingboxes,  # Object containing all bounding boxes (ground truths and detections)
-    IOUThreshold=0.3,  # IOU threshold
+    IOUThreshold=0.01,  # IOU threshold
     method=MethodAveragePrecision.EveryPointInterpolation)  # As the official matlab code
 print("Average precision values per class:\n")
 # Loop through classes to obtain their metrics
@@ -156,5 +170,14 @@ for mc in metricsPerClass:
     average_precision = mc['AP']
     ipre = mc['interpolated precision']
     irec = mc['interpolated recall']
+    tp  = mc['total TP']
+    fp   = mc['total FP']
+    all_gt = mc['total positives']
     # Print AP per class
     print('%s: %f' % (c, average_precision))
+    print(f'the all gt is {all_gt}')
+    # print(f'the precision is {precision}')
+    print(f'the tp is {tp}')
+    print(f'the fp is {fp}\n')
+    print(f'the iou_col is {mc["iou_col"]}')
+    # print(f'the irec is {irec}')

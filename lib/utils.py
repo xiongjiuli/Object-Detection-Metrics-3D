@@ -47,8 +47,8 @@ class BBFormat(Enum):
         Developed by: Rafael Padilla
         Last modification: May 24 2018
     """
-    XYWH = 1
-    XYX2Y2 = 2
+    XYZWHD = 1
+    XYZX2Y2Z2 = 2
 
 
 # size => (width, height) of the image
@@ -56,18 +56,23 @@ class BBFormat(Enum):
 def convertToRelativeValues(size, box):
     dw = 1. / (size[0])
     dh = 1. / (size[1])
+    dd = 1. / (size[2])
     cx = (box[1] + box[0]) / 2.0
     cy = (box[3] + box[2]) / 2.0
+    cz = (box[5] + box[4]) / 2.0
     w = box[1] - box[0]
     h = box[3] - box[2]
+    h = box[5] - box[4]
     x = cx * dw
     y = cy * dh
+    z = cz * dd
     w = w * dw
     h = h * dh
+    d = d * dd
     # x,y => (bounding_box_center)/width_of_the_image
     # w => bounding_box_width / width_of_the_image
     # h => bounding_box_height / height_of_the_image
-    return (x, y, w, h)
+    return (x, y, z, w, h, d)
 
 
 # size => (width, height) of the image
@@ -75,22 +80,29 @@ def convertToRelativeValues(size, box):
 def convertToAbsoluteValues(size, box):
     # w_box = round(size[0] * box[2])
     # h_box = round(size[1] * box[3])
-    xIn = round(((2 * float(box[0]) - float(box[2])) * size[0] / 2))
-    yIn = round(((2 * float(box[1]) - float(box[3])) * size[1] / 2))
-    xEnd = xIn + round(float(box[2]) * size[0])
-    yEnd = yIn + round(float(box[3]) * size[1])
+    xIn = round(((2 * float(box[0]) - float(box[3])) * size[0] / 2))
+    yIn = round(((2 * float(box[1]) - float(box[4])) * size[1] / 2))
+    zIn = round(((2 * float(box[2]) - float(box[5])) * size[2] / 2))
+    xEnd = xIn + round(float(box[3]) * size[0])
+    yEnd = yIn + round(float(box[4]) * size[1])
+    zEnd = zIn + round(float(box[5]) * size[2])
     if xIn < 0:
         xIn = 0
     if yIn < 0:
         yIn = 0
+    if zIn < 0:
+        zIn = 0
     if xEnd >= size[0]:
         xEnd = size[0] - 1
     if yEnd >= size[1]:
         yEnd = size[1] - 1
-    return (xIn, yIn, xEnd, yEnd)
+    if zEnd >= size[2]:
+        zEnd = size[2] - 1
+    return (xIn, yIn, zIn, xEnd, yEnd, zEnd)
 
 
 def add_bb_into_image(image, bb, color=(255, 0, 0), thickness=2, label=None):
+    print('the add_bb_into_image in lib.utils.py is not done')
     r = int(color[0])
     g = int(color[1])
     b = int(color[2])
@@ -99,11 +111,13 @@ def add_bb_into_image(image, bb, color=(255, 0, 0), thickness=2, label=None):
     fontScale = 0.5
     fontThickness = 1
 
-    x1, y1, x2, y2 = bb.getAbsoluteBoundingBox(BBFormat.XYX2Y2)
+    x1, y1, z1, x2, y2, z2 = bb.getAbsoluteBoundingBox(BBFormat.XYZX2Y2Z2)
     x1 = int(x1)
     y1 = int(y1)
+    z1 = int(z1)
     x2 = int(x2)
     y2 = int(y2)
+    z2 = int(z2)
     cv2.rectangle(image, (x1, y1), (x2, y2), (b, g, r), thickness)
     # Add label
     if label is not None:
