@@ -97,9 +97,10 @@ class Evaluator:
             # create dictionary with amount of gts for each image
             det = {key: np.zeros(len(gts[key])) for key in gts}
 
-            print("Evaluating class: %s (%d detections)" % (str(c), len(dects)))
+            # print("Evaluating class: %s (%d detections)" % (str(c), len(dects)))
             # Loop through detections
             iou_col = []
+            det_tp = []
             for d in range(len(dects)):
                 # print('dect %s => %s' % (dects[d][0], dects[d][3],))
                 # Find ground truth image
@@ -117,6 +118,7 @@ class Evaluator:
                     if det[dects[d][0]][jmax] == 0:
                         TP[d] = 1  # count as true positive
                         det[dects[d][0]][jmax] = 1  # flag as already 'seen'
+                        det_tp.append(dects[d][3])
                     else:
                         FP[d] = 1  # count as false positive
                         # print(f"FP and the iou is {iou}")
@@ -147,6 +149,7 @@ class Evaluator:
                 'total TP': np.sum(TP),
                 'total FP': np.sum(FP),
                 'iou_col' : iou_col,
+                'det_tp' : det_tp,
             }
             ret.append(r)
         return ret
