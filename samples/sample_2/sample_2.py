@@ -10,68 +10,129 @@
 #        Last modification: May 24th 2018                                                 #
 ###########################################################################################
 
-import _init_paths
+# import _init_paths
 import os
 import matplotlib.pyplot as plt
 from BoundingBox import BoundingBox
 from BoundingBoxes import BoundingBoxes
 from Evaluator import *
 from utils import *
+import numpy as np
 
 
-def get_gtboxes(folder_file_name):
-    folder_path = f'D:\Work_file\Object-Detection-Metrics-3D\samples\sample_2\{folder_file_name}' # 指定文件夹路径
+def get_gtboxes(folder_path, filename):
     result = []
+    if filename.endswith('.txt'):
+        with open(os.path.join(folder_path, filename), 'r') as f:
+            for line in f:
+                data = line.strip().split()
+                x1, y1, z1, x2, y2, z2 = map(float, data[1:7])
+                result.append([x1, y1, z1, x2, y2, z2])
+    return result
 
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.txt'):
-            with open(os.path.join(folder_path, filename), 'r') as f:
-                for line in f:
-                    data = line.strip().split()
-                    x1, y1, z1, x2, y2, z2 = map(float, data[1:7])
+
+def get_predboxes(pred_file_name, filename, confidence):
+    result = []
+    folder_path = f'/public_bme/data/xiongjl/uii/lib/bbox_txt/{pred_file_name}'
+    if filename.endswith('.txt'):
+        with open(os.path.join(folder_path, filename), 'r') as f:
+            for line in f:
+                data = line.strip().split()
+                confi = float(data[1])
+                if confi >= confidence:
+                    x1, y1, z1, x2, y2, z2 = map(float, data[2:8])
                     result.append([x1, y1, z1, x2, y2, z2])
     return result
 
 
-def get_predboxes(folder_file_name, confidence):
-    folder_path = f'D:\Work_file\Object-Detection-Metrics-3D\samples\sample_2\{folder_file_name}' # 指定文件夹路径
+
+def iou(boxA, boxB):
+    # if boxes dont intersect
+    if _boxesIntersect(boxA, boxB) is False:
+        return 0
+    interArea = _getIntersectionArea(boxA, boxB)
+    union = _getUnionAreas(boxA, boxB, interArea=interArea)
+    # intersection over union
+    iou = interArea / union
+    if iou < 0:
+        iou = - iou
+        print('the iou < 0, and i do the iou = - iou')
+    # print(f'the iou is {iou}, the interArea is {interArea}, the union is {union}')
+    assert iou >= 0
+    return iou
+    
+# boxA = (Ax1,Ay1,Ax2,Ay2)
+# boxB = (Bx1,By1,Bx2,By2)
+def _boxesIntersect(boxA, boxB):
+    if boxA[0] > boxB[3]:
+        return False  # boxA is right of boxB
+    if boxB[0] > boxA[3]:
+        return False  # boxA is left of boxB
+    if boxA[2] > boxB[5]:
+        return False  # boxA is left of boxB
+    if boxB[2] > boxA[5]:
+        return False  # boxA is left of boxB
+    if boxA[4] < boxB[1]:
+        return False  # boxA is above boxB
+    if boxA[1] > boxB[4]:
+        return False  # boxA is below boxB
+    return True
+def _getIntersectionArea(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    zA = max(boxA[2], boxB[2])
+    xB = min(boxA[3], boxB[3])
+    yB = min(boxA[4], boxB[4])
+    zB = min(boxA[5], boxB[5])
+    # intersection area
+    return (xB - xA + 1) * (yB - yA + 1) * (zB - zA + 1)
+
+def _getUnionAreas(boxA, boxB, interArea=None):
+    # print(f'the boxa is {boxA}, the boxb is {boxB}')
+    area_A = _getArea(boxA)
+    area_B = _getArea(boxB)
+    # print(f'the areaa is {area_A}, the areab is {area_B}')
+    if interArea is None:
+        interArea = _getIntersectionArea(boxA, boxB)
+        # print(f'the interarea is None, the interarea is {interArea}')
+    # print(f'the interarea is None, the interarea is {interArea}')
+    # print(f'the iou is {area_A + area_B - interArea}')
+    return float(area_A + area_B - interArea)
+
+def _getArea(box):
+    return (box[3] - box[0] + 1) * (box[4] - box[1] + 1) * (box[5] - box[2] + 1)
+
+
+
+def filter_boxes(gt, pred, iou_confi):
     result = []
-
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.txt'):
-            with open(os.path.join(folder_path, filename), 'r') as f:
-                for line in f:
-                    data = line.strip().split()
-                    confi = float(data[1])
-                    if confi >= confidence:
-                        x1, y1, z1, x2, y2, z2 = map(float, data[2:8])
-                        result.append([x1, y1, z1, x2, y2, z2])
-    return result
-
-
-def filter_boxes(gt, pred):
-    result = []
-    # print(f'the len(gt) is {gt}')
-    # print(f'the len(pred) is {pred}')
-    yes = 0
-    no = 0
     for box in gt:
         overlap = False
         for p_box in pred:
-            # print(f'p_box is {p_box}')
-            # print(f"box is {box}")
-            if (box[0] < p_box[3] and box[3] > p_box[0]) and (box[1] < p_box[4] and box[4] > p_box[1]) and (box[2] < p_box[5] and box[5] > p_box[2]):
-                # print(f"yes -- {yes}")
-                yes += 1
-                # print(f'have overlap -- \nthe gtbox is {box}\nthe prebox is {p_box}')
+            IoU = iou(box, p_box)
+            if IoU >= iou_confi:
                 overlap = True
                 break
         if not overlap:
-            # print(f"no -- {no}")
-            no += 1
             result.append(box)
-    # print(result)
+
     return result
+
+
+def get_fp(gt, pred, iou_confi):
+    result = []
+    for box in pred:
+        overlap = False
+        for p_box in gt:
+            IoU = iou(box, p_box)
+            if IoU >= iou_confi:
+                overlap = True
+                break
+        if not overlap:
+            result.append(box)
+
+    return result
+
 
 
 def getBoundingBoxes(confi, gt_filename, det_filename):
@@ -82,7 +143,7 @@ def getBoundingBoxes(confi, gt_filename, det_filename):
     # Read ground truths
     currentPath = os.path.dirname(os.path.abspath(__file__))
     # print(f'currentPath is {currentPath}')
-    folderGT = os.path.join(currentPath, gt_filename)
+    folderGT = os.path.join(currentPath,'bbox_txt', gt_filename)
     os.chdir(folderGT)
     files = glob.glob("*.txt")
     files.sort()
@@ -126,7 +187,7 @@ def getBoundingBoxes(confi, gt_filename, det_filename):
             allBoundingBoxes.addBoundingBox(bb)
         fh1.close()
     # Read detections
-    folderDet = os.path.join(currentPath, det_filename)
+    folderDet = os.path.join(currentPath, 'bbox_txt', det_filename)
     os.chdir(folderDet)
     files = glob.glob("*.txt")
     files.sort()
@@ -177,71 +238,81 @@ def getBoundingBoxes(confi, gt_filename, det_filename):
     return allBoundingBoxes
 
 
-def createImages(dictGroundTruth, dictDetected):
-    """Create representative images with bounding boxes."""
-    import numpy as np
-    import cv2
-    # Define image size
-    width = 200
-    height = 200
-    # Loop through the dictionary with ground truth detections
-    for key in dictGroundTruth:
-        image = np.zeros((height, width, 3), np.uint8)
-        gt_boundingboxes = dictGroundTruth[key]
-        image = gt_boundingboxes.drawAllBoundingBoxes(image)
-        detection_boundingboxes = dictDetected[key]
-        image = detection_boundingboxes.drawAllBoundingBoxes(image)
-        # Show detection and its GT
-        cv2.imshow(key, image)
-        cv2.waitKey()
 
-
-def plot_froc(epoches, train_data):
+def plot_froc(pred_file_name, train_data, iou_confi=0.01, suffix=''):
     # 计算这个 fROC 曲线
-    evaluator = Evaluator()
     false_positives_per_image = []
-    true_positive_fractions = []
+    recall = []
     for i in range(5, 105, 5):
         i = round(i * 0.01, 2)
         # 取出这个prediction boxes 和 gt boxes
-        pred_bboxes = get_predboxes(folder_file_name=f'detections_{epoches}', confidence=i)
+        
         if train_data == True:
-            ground_truth_boxes = get_gtboxes(folder_file_name='train_groundtruths')
-            boundingboxes = getBoundingBoxes(confi=i, gt_filename='train_groundtruths', det_filename=f'detections_{epoches}')
-        else:
-            ground_truth_boxes = get_gtboxes(folder_file_name='groundtruths')
-            boundingboxes = getBoundingBoxes(confi=i, gt_filename='groundtruths', det_filename=f'detections_{epoches}')
-        no_predbox = filter_boxes(ground_truth_boxes, pred_bboxes)
-        FPs = (len(ground_truth_boxes) - len(no_predbox)) / len(ground_truth_boxes)
-        # print(FPs)
-        true_positive_fractions.append(FPs)
-        metricsPerClass = evaluator.GetPascalVOCMetrics(
-            boundingboxes,  # Object containing all bounding boxes (ground truths and detections)
-            IOUThreshold=0.01,  # IOU threshold
-            method=MethodAveragePrecision.EveryPointInterpolation)  # As the official matlab code
-            # recall = pred_bboxes
-        for mc in metricsPerClass:
-            fp  = mc['total FP']
-            if train_data == True:
-                recall = fp / len(os.listdir('D:\Work_file\Object-Detection-Metrics-3D\samples\sample_2\\train_groundtruths'))
-            else:
-                recall = fp / len(os.listdir('D:\Work_file\Object-Detection-Metrics-3D\samples\sample_2\\groundtruths'))
-            false_positives_per_image.append(recall)
+            folder_path = f'/public_bme/data/xiongjl/uii/lib/bbox_txt/train_groundtruths' # 指定文件夹路径
+            gtall_nodes = 0
+            predall_nodes = 0
+            tp_nodes = 0
+            fp_nodes = 0
+            
+            for filename in os.listdir(folder_path):
+                ground_truth_boxes = get_gtboxes(folder_path, filename)  # 这个就是提取gt
+                pred_bboxes = get_predboxes(pred_file_name, filename, confidence=i)  # 这个就是根据confi来提取大于这个confi的bbox
+                label = f'{pred_file_name} {suffix}'
+                predall_nodes += len(pred_bboxes)
+                no_predbox = filter_boxes(ground_truth_boxes, pred_bboxes, iou_confi=iou_confi)  # 得到没有被预测出来的gt_box #!这个地方应该再加上iou的一些设置
+                fp = get_fp(ground_truth_boxes, pred_bboxes, iou_confi=iou_confi)
+                tp_nodes += (len(ground_truth_boxes) - len(no_predbox))
+                fp_nodes += len(fp)
+                gtall_nodes += len(ground_truth_boxes)
 
-    plt.plot(false_positives_per_image, true_positive_fractions, marker='o', label=epoches)
+        else:
+            folder_path = f'/public_bme/data/xiongjl/uii/lib/bbox_txt/groundtruths' # 指定文件夹路径
+            gtall_nodes = 0
+            tp_nodes = 0
+            fp_nodes = 0
+            predall_nodes = 0
+            for filename in os.listdir(folder_path):
+                ground_truth_boxes = get_gtboxes(folder_path, filename)
+                pred_bboxes = get_predboxes(pred_file_name, filename, confidence=i)
+                label = f'{pred_file_name} {suffix}'
+                predall_nodes += len(pred_bboxes)
+                no_predbox = filter_boxes(ground_truth_boxes, pred_bboxes, iou_confi=iou_confi)  # 得到没有被预测出来的gt_box
+                fp = get_fp(ground_truth_boxes, pred_bboxes, iou_confi=iou_confi)
+                tp_nodes += (len(ground_truth_boxes) - len(no_predbox))
+                fp_nodes += len(fp)
+                gtall_nodes += len(ground_truth_boxes)
+
+
+        tPs = tp_nodes / gtall_nodes  # recall 
+        recall.append(tPs)
+
+        if train_data == True:
+            fps = fp_nodes / len(os.listdir('/public_bme/data/xiongjl/uii/lib/bbox_txt/train_groundtruths'))
+        else:
+            fps = fp_nodes / len(os.listdir('/public_bme/data/xiongjl/uii/lib/bbox_txt/groundtruths'))
+        false_positives_per_image.append(fps)
+
+    print(f'false_positives_per_image is {false_positives_per_image}')
+    print(f'recall is {recall}')
+
+    plt.plot(false_positives_per_image, recall, marker='o', label=label)
+    # plt.xscale('symlog')
     # 为每个点添加标签
     labels = [f'{round(i * 0.01, 2)}' for i in range(5, 105, 5)]
     for i, label in enumerate(labels):
-        plt.annotate(label, xy=(false_positives_per_image[i], true_positive_fractions[i]), xytext=(false_positives_per_image[i] + 0.006, true_positive_fractions[i] - 0.08),
+        plt.annotate(label, xy=(false_positives_per_image[i], recall[i]), xytext=(false_positives_per_image[i] + 0.006, recall[i] - 0.08),
                     arrowprops=dict(facecolor='gray', edgecolor='gray', arrowstyle='-'))
 
 
-def plot_ap(txt_name, train_data, confi=0.15):
+
+def plot_ap(pred_file_name, train_data, confi, iou_confi, suffix=''):
     # Read txt files containing bounding boxes (ground truth and detections)
     if train_data == True:
-        boundingboxes = getBoundingBoxes(confi=confi, gt_filename='train_groundtruths', det_filename=txt_name)
+        boundingboxes = getBoundingBoxes(confi=confi, gt_filename='train_groundtruths', det_filename=pred_file_name)
+        annotation = f'{pred_file_name} {suffix}confi:{confi}'
     else:
-        boundingboxes = getBoundingBoxes(confi=confi, gt_filename='groundtruths', det_filename=txt_name)
+        boundingboxes = getBoundingBoxes(confi=confi, gt_filename='groundtruths', det_filename=pred_file_name)
+        annotation = f'{pred_file_name} {suffix}confi:{confi}'
     # Uncomment the line below to generate images based on the bounding boxes
     # createImages(dictGroundTruth, dictDetected)
     # Create an evaluator object in order to obtain the metrics
@@ -251,55 +322,59 @@ def plot_ap(txt_name, train_data, confi=0.15):
     ##############################################################
     # Plot Precision x Recall curve
     evaluator.PlotPrecisionRecallCurve(
-        boundingboxes,  # Object containing all bounding boxes (ground truths and detections)
-        IOUThreshold=0.01,  # IOU threshold
+        boundingboxes,
+        annotation=annotation,  # Object containing all bounding boxes (ground truths and detections)
+        IOUThreshold=iou_confi,  # IOU threshold
         method=MethodAveragePrecision.EveryPointInterpolation,  # As the official matlab code
-        showAP=True,  # Show Average Precision in the title of the plot
-        showInterpolatedPrecision=True)  # Plot the interpolated precision curve
+        showAP=False,  # Show Average Precision in the title of the plot
+        showInterpolatedPrecision=True,
+        showGraphic=False)  # Plot the interpolated precision curve
     
-    metricsPerClass = evaluator.GetPascalVOCMetrics(
-        boundingboxes,  # Object containing all bounding boxes (ground truths and detections)
-        IOUThreshold=0.01,  # IOU threshold
-        method=MethodAveragePrecision.EveryPointInterpolation)  # As the official matlab code
-    print("Average precision values per class:\n")
-    # Loop through classes to obtain their metrics
-    for mc in metricsPerClass:
-        # Get metric values per each class
-        c = mc['class']
-        average_precision = mc['AP']
-        tp  = mc['total TP']
-        fp   = mc['total FP']
-        all_gt = mc['total positives']
-        # Print AP per class
-        print('%s: %f' % (c, average_precision))
-        print(f'the all gt is {all_gt}')
-        # print(f'the precision is {precision}')
-        print(f'the tp is {tp}')
-        print(f'the fp is {fp}\n')
-        # print(f'the det_tp is {len(mc["det_tp"])}')
-        # pred_bboxes = mc["det_tp"]
-        # print(f'the iou_col is {mc["iou_col"]}')
-        # print(f'the irec is {irec}')
-
-
-
-
-
 
 if __name__ == '__main__':
 
-    plot_ap(txt_name='detections_310', train_data=False, confi=0.15)
-        
     plt.figure()
-    plot_froc(epoches=310, train_data=False)
-    plot_froc(epoches=360, train_data=False)
-    # plt.plot(false_positives_per_image, true_positive_fractions, marker='o')
+    iou_confi = 0.05
+    ap_confi = 0.5
+    train_data = True
+
+    model_names = [
+
+        # 'train-res101_crop256_hmapv4_best-105',
+        # 'train-res101_crop256_hmapv4-170',
+        # 'train-res101_crop256_hmapv4-205',
+        'train-swin_crop256_hmapv4_best-160',
+        'train-swin_crop256_hmapv4-205', 
+        'train-swin_crop160_hmapv4-605',
+        'train-swin_crop160_hmapv4_best-490',
+        
+    ]
+
+    for names in model_names:
+        plot_ap(pred_file_name=names, train_data=train_data, confi=ap_confi, iou_confi=iou_confi, suffix='')
+
     plt.grid(True)
+    # plt.show()
+    plt.savefig(f"/public_bme/data/xiongjl/uii/png_img/PR Curve iou {iou_confi}-thres {ap_confi}.png")
+
+    
+    fig, axes = plt.subplots()
+    for name in model_names:
+        plot_froc(pred_file_name=name, train_data=train_data, iou_confi=iou_confi, suffix='')
+
+    
+    # x_ticks = [0, 1/8, 1/4, 1/2, 1, 2, 4, 8] # 生成x轴的刻度值
+    # y_ticks = np.arange(0, 1.1, 0.1) # 生成y轴的刻度值
+
+    # # 设置x轴和y轴的刻度
+    # plt.xticks(x_ticks, [str(val) for val in x_ticks])
+    # plt.yticks(y_ticks)
+    # 显示网格线
+    plt.grid()
     plt.legend()
-    # plt.xlim([0.0, 1.0])
-    # plt.ylim([0.0, 1.0])
     plt.xlabel('False Positives Per Image')
     plt.ylabel('True Positive Fraction (recall)')
     plt.title('fROC Curve')
-
-    plt.show()
+    # 保存图像为PNG格式文件
+    plt.savefig(f"/public_bme/data/xiongjl/uii/png_img/fROC Curve iou{iou_confi}.png")
+    # plt.show()
